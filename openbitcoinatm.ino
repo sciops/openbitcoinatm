@@ -1,4 +1,5 @@
-//*************************************************************************
+/*
+ ************************************************************************
  OpenBitcoinATM
  (ver. 1.5.4)
     
@@ -26,7 +27,7 @@
  OpenBitcoinATM is the first open-source Bitcoin automated teller machine for
  experimentation and education. 
   
- This application, counts pulses from a Pyramid Technologies Apex 7000
+ This application, counts pulses from a Pyramid Technologies Apex 5000
  series bill acceptor and interfaces with the Adafruit 597 TTL serial Mini Thermal 
  Receipt Printer.
 
@@ -36,14 +37,17 @@
   John Mayo-Smith: https://github.com/mayosmith
   
   Here's the A2 Micro panel thermal printer --> http://www.adafruit.com/products/597
-
+  
+  Here's the bill accceptor --> APEX 5400 on eBay http://bit.ly/MpETED
+  
   Peter Kropf: https://github.com/pkropf/greenbacks
   
   Thomas Mayo-Smith:http://www.linkedin.com/pub/thomas-mayo-smith/63/497/a57
 
 
 
- *************************************************************************/
+ ************************************************************************
+ */
 
 
  #include <SoftwareSerial.h>
@@ -53,19 +57,18 @@
  #include <SD.h>
 
  File logfile; //logfile
-
-
+ 
  byte cThisChar; //for streaming from SD card
  byte cLastChar; //for streaming from SD card
  char cHexBuf[3]; //for streaming from SD card
  
  const int DOLLAR_PULSE = 4; //pulses per dollar
  const int PULSE_TIMEOUT = 2000; //ms before pulse timeout
- const int MAX_BITCOINS = 10; //max btc per SD card
+ const int MAX_BITCOINS = 500; //max btc per SD card
  const int HEADER_LEN = 25; //maximum size of bitmap header
  
  #define SET_RTCLOCK      1 // Set to true to set Bitcoin transaction log clock to program compile time.
- #define TEST_MODE        1 // Set to true to not delete private keys (prints the same private key for each dollar).
+ #define TEST_MODE        0 // Set to true to not delete private keys (prints the same private key for each dollar).
  
  #define DOUBLE_HEIGHT_MASK (1 << 4) //size of pixels
  #define DOUBLE_WIDTH_MASK  (1 << 5) //size of pixels
@@ -88,14 +91,15 @@
  SoftwareSerial *printer;
  #define PRINTER_WRITE(b) printer->write(b)
  
-
  long pulseCount = 0;
+ int denom = 0; //denomination of bill inserted
  unsigned long pulseTime, lastTime;
- volatile long pulsePerDollar = 4;
+ //volatile long pulsePerDollar = 6; unused, see DOLLAR_PULSE above.
  
-void setup(){
+ void setup(){
   Serial.begin(57600); //baud rate for serial monitor
   attachInterrupt(0, onPulse, RISING); //interupt for Apex bill acceptor pulse detect
+  //attachInterrupt(0, onPulse, CHANGE);
   pinMode(2, INPUT); //for Apex bill acceptor pulse detect 
   pinMode(10, OUTPUT); //Slave Select Pin #10 on Uno
   
@@ -129,34 +133,75 @@ void setup(){
   PRINTER_WRITE(DOUBLE_WIDTH_MASK);
 */
 
-  Serial.println();
-  Serial.println("Parameters set");
-  
    #if SET_RTCLOCK
     // following line sets the RTC to the date & time for Bitcoin Transaction log
+     Serial.println("Setting RTC");
      RTC.adjust(DateTime(__DATE__, __TIME__));
    #endif
 
+  Serial.println();
+  Serial.println("Parameters set");
+  
 }
 
 void loop(){
-  
-  
+//Serial.print("Pulse Counter: ");
+//Serial.print(pulseCount); 
+//Serial.println();
+//int valloop = digitalRead(2);
+//Serial.print(valloop);
+//Serial.println();
+
     if(pulseCount == 0)
      return;
  
-    if((millis() - pulseTime) < PULSE_TIMEOUT) 
+    delay(25);//This seems to really help with pulse timeout reliability.
+
+    //Serial.print("millis() at: ");
+    //Serial.println(millis());
+  
+    if((millis() - pulseTime) < PULSE_TIMEOUT) //if time since start of last onPulse() < 6 secs
       return;
- 
-     if(pulseCount == DOLLAR_PULSE)
-       getNextBitcoin(); //dollar baby!
+      
+    Serial.println("Pulse Timeout!");
+    //Serial.print("pulseTime: ");
+    //Serial.println(pulseTime);   
        
-     //----------------------------------------------------------
-     // Add additional currency denomination logic here: $5, $10, $20      
-     //----------------------------------------------------------
+     if(pulseCount == DOLLAR_PULSE)
+     {
+       denom=1;
+       getNextBitcoin(); //dollar baby!
+     } 
+     if(pulseCount == (DOLLAR_PULSE * 5))
+     {
+       denom=5;
+       getNextBitcoin(); //dollar baby!
+     } 
+     if(pulseCount == (DOLLAR_PULSE * 10))
+     {
+       denom=10;
+       getNextBitcoin(); //dollar baby!
+     } 
+     if(pulseCount == (DOLLAR_PULSE * 20))
+     {
+       denom=20;
+       getNextBitcoin(); //dollar baby!
+     } 
+     if(pulseCount == (DOLLAR_PULSE * 50))
+     {
+       denom=50;
+       getNextBitcoin(); //dollar baby!
+     } 
+     if(pulseCount == (DOLLAR_PULSE * 100))
+     {
+       denom=100;
+       getNextBitcoin(); //dollar baby!
+     } 
    
      pulseCount = 0; // reset pulse count
      pulseTime = 0;
+     
+
   
 }
 
@@ -168,11 +213,23 @@ onPulse
 ******************************************************/
 void onPulse(){
   
+//Serial.println("onPulse() function entered");
 int val = digitalRead(2);
-pulseTime = millis();
+//Serial.print("Digital Read value is: ");
+//Serial.println(val);
+
+pulseTime = millis(); //set pulseTime to the ms since program start
 
 if(val == HIGH)
+  {
   pulseCount++;
+  } 
+  
+  Serial.print("Pulse Counter: ");
+  Serial.println(pulseCount); 
+  //Serial.println();
+  //Serial.print("pulseTime: ");
+  //Serial.println(pulseTime);
   
 }
 
@@ -186,9 +243,10 @@ int getNextBitcoin(){
     
   int BTCNumber = 0, i = 0;
  // long counter = 0;
- char cBuf, cPrev;
-  
-
+  char cBuf, cPrev;
+  int denom = pulseCount / 4;
+  Serial.print("dollar baby! Denomination detected: ");
+  Serial.println(denom);
        
     Serial.println("card initialized.");
  
@@ -196,10 +254,31 @@ int getNextBitcoin(){
       
          //prepend file name
          String temp = "BTC_";
+         //append denomination
+         temp.concat(denom);
+         temp.concat("_");
          //add file number
          temp.concat(BTCNumber);
          //append extension
          temp.concat(".btc"); 
+         
+         /*
+         DateTime now;
+         now=RTC.now();
+         
+         //prepend file name
+         String temp = "BTC_";
+         //add file number
+         temp.concat(BTCNumber);
+         //add date
+         temp.concat(now.day
+         //append extension
+         temp.concat(".btc");          
+         
+         
+         
+         
+         */
          
          //char array
          char filename[temp.length()+1];   
@@ -225,11 +304,26 @@ int getNextBitcoin(){
              
                //print QR code off the SD card
                printBitmap(filename); 
-
+                
+                
+                /*
                printer->println("Official Bitcoin Currency.");
 
                printer->println("Keep secure.");
 
+               printer->println("OpenBitcoinATM.org");
+               
+               printer->println(" ");
+               printer->println(" ");
+               printer->println(" ");
+               printer->println(" ");
+               */
+             
+               printer->print("Key File Number: ");
+               printer->println(filename);
+
+               printer->println("Official Bitcoin Currency.");
+               printer->println("Keep secure.");
                printer->println("OpenBitcoinATM.org");
                
                printer->println(" ");
